@@ -17,15 +17,15 @@ $verboseLogging = $false
 
 # Make sure to create the Global variables defined below in HelloID
 #HelloID Connection Configuration
-$script:PortalBaseUrl = $portalBaseUrl
-$portalApiKey = $portalApiKey
-$portalApiSecret = $portalApiSecret
+# $script:PortalBaseUrl = "" # Set from Global Variable
+# $portalApiKey ="" # Set from Global Variable
+# $portalApiSecret = "" # Set from Global Variable
 
 #AzureAD Connection Configuration
 $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
-$AzureADtenantID = ""
-$AzureADAppId = ""
-$AzureADAppSecret = ""
+# $AzureADtenantID = "" # Set from Global Variable
+# $AzureADAppId = "" # Set from Global Variable
+# $AzureADAppSecret = "" # Set from Global Variable
 $AzureADGroupsSearchFilter = "`$search=`"displayName:department_`"" # Optional, when no filter is provided ($AzureADGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections
 
 #HelloID Self service Product Configuration
@@ -194,6 +194,52 @@ function Invoke-HIDRestmethod {
     }
 }
 
+function New-AuthorizationHeaders {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Generic.Dictionary[[String], [String]]])]
+    param(
+        [parameter(Mandatory)]
+        [string]
+        $TenantId,
+
+        [parameter(Mandatory)]
+        [string]
+        $ClientId,
+
+        [parameter(Mandatory)]
+        [string]
+        $ClientSecret
+    )
+    try {
+        Write-Verbose "Creating Access Token"
+        $authUri = "https://login.microsoftonline.com/$($TenantId)/oauth2/token"
+    
+        $body = @{
+            grant_type    = "client_credentials"
+            client_id     = "$ClientId"
+            client_secret = "$ClientSecret"
+            resource      = "https://graph.microsoft.com"
+        }
+    
+        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType 'application/x-www-form-urlencoded'
+        $accessToken = $Response.access_token
+    
+        #Add the authorization header to the request
+        Write-Verbose 'Adding Authorization headers'
+
+        $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
+        $headers.Add('Authorization', "Bearer $accesstoken")
+        $headers.Add('Accept', 'application/json')
+        $headers.Add('Content-Type', 'application/json')
+        # Needed to filter on specific attributes (https://docs.microsoft.com/en-us/graph/aad-advanced-queries)
+        $headers.Add('ConsistencyLevel', 'eventual')
+
+        Write-Output $headers  
+    }
+    catch {
+        throw $_
+    }
+}
 #endregion functions
 
 #region script
