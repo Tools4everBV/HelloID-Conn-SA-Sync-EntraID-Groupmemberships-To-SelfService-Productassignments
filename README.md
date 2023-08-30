@@ -32,6 +32,9 @@ Synchronizes Azure AD groupmemberships to HelloID Self service productassignment
 - Make sure you have Windows PowerShell 5.1 installed on the server where the HelloID agent and Service Automation agent are running.
 - **App ID & App Secret** for the app registration with permissions to the Microsoft Graph API.
 - Make sure the sychronization is configured to meet your requirements.
+- - Setup synchronization of Azure AD or local AD users and groups to HelloID.
+  - This can be either the [local AD sync](https://docs.helloid.com/en/access-management/directory-sync/active-directory-sync.html) or the [Azure AD sync](https://docs.helloid.com/en/access-management/directory-sync/azure-ad-sync.html).
+  > If using the [local AD sync](https://docs.helloid.com/en/access-management/directory-sync/active-directory-sync.html), make sure the userAttribute "userPrincipalName" is mapped and synced. Also make sure to change the **$taskVariableUserValue** accordingly.
 
 ## Introduction
 
