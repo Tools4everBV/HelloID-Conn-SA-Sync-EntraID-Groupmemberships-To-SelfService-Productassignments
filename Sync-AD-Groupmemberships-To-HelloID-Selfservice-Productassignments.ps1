@@ -33,10 +33,15 @@ $ProductSkuPrefix = 'AADGRP' # Optional, when no SkuPrefix is provided ($Product
 $PowerShellActionName = "Add-AzureADUserToAzureADGroup" # Define the name of the PowerShell action
 
 #Correlation Configuration
-$PowerShellActionVariableCorrelationProperty = "GroupId" # The name of the property of HelloID Self service Product action variables to match to AD Groups (name of the variable of the PowerShell action that contains the group)
-$azureADGroupCorrelationProperty = "id" # The name of the property of AD groups to match Groups in HelloID Self service Product actions (the group)
-$azureADUserCorrelationProperty = "id" # The name of the property of AD users to match to HelloID users
-$helloIDUserCorrelationProperty = "immutableId" # The name of the property of HelloID users to match to AD users
+# The name of the property of HelloID Self service Product action variables to match to AD Groups (name of the variable of the PowerShell action that contains the group)
+$PowerShellActionVariableCorrelationProperty = "GroupId"
+# The name of the property of AD groups to match Groups in HelloID Self service Product actions (the group)
+$azureADGroupCorrelationProperty = "id"
+# The name of the property of AD users to match to HelloID users
+$azureADUserCorrelationProperty = "userPrincipalName"
+# The name of the property of HelloID users to match to AD users
+# if using userAttributes, make sure to use it like this : userAttributes_<attributename> (userAttributes. will not work!)
+$helloIDUserCorrelationProperty = "immutableId" # Note, only works for Azure AD synced users. Example for local AD synced users: "userAttributes_userprincipalname"
 
 #region functions
 function Resolve-HTTPError {
@@ -240,6 +245,7 @@ function New-AuthorizationHeaders {
         throw $_
     }
 }
+
 #endregion functions
 
 #region script
@@ -360,8 +366,25 @@ try {
     }
     $helloIDUsers = Invoke-HIDRestMethod @splatParams
 
+    # Transform userAttributes and add to the user object directly
+    $helloIDUsers | ForEach-Object {
+        if ($null -ne $_.userAttributes) {
+            foreach ($userAttribute in $_.userAttributes) {
+                if (![string]::IsNullOrEmpty($userAttribute)) {
+                    foreach ($property in $userAttribute.PsObject.Properties) {
+                        # Add a property for each field in object
+                        $_ | Add-Member -MemberType NoteProperty -Name ("userAttributes_" + $property.Name) -Value $property.Value -Force
+                    }
+                }
+            }
+
+            # Remove unneccesary fields from  object (to avoid unneccesary large objects)
+            $_.PSObject.Properties.Remove('userAttributes')
+        }
+    }
+
     $helloIDUsersInScope = $null
-    $helloIDUsersInScope = $helloIDUsers
+    $helloIDUsersInScope = $helloIDUsers | Where-Object { -not([string]::IsNullOrEmpty($_.$helloIDUserCorrelationProperty)) }
 
     $helloIDUsersInScopeGrouped = $helloIDUsersInScope | Group-Object -Property $helloIDUserCorrelationProperty -AsHashTable -AsString
     Hid-Write-Status -Event Success -Message "Successfully queried Users from HelloID. Result count: $(($helloIDUsersInScope | Measure-Object).Count)"
