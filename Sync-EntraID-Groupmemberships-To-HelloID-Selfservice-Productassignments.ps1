@@ -7,7 +7,7 @@
 # Set to false to acutally perform actions - Only run as DryRun when testing/troubleshooting!
 $dryRun = $false
 # Set to true to log each individual action - May cause lots of logging, so use with cause, Only run testing/troubleshooting!
-$verboseLogging = $true
+$verboseLogging = $false
 
 switch ($verboseLogging) {
     $true { $VerbosePreference = "Continue" }
