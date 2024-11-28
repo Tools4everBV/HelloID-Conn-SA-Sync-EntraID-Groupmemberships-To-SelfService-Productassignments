@@ -43,7 +43,7 @@ $PowerShellActionVariableCorrelationProperty = "GroupId"
 # The name of the property of AD groups to match Groups in HelloID Self service Product actions (the group)
 $entraIDGroupCorrelationProperty = "id"
 # The name of the property of Entra ID users to match to HelloID users
-$entraIDUserCorrelationProperty = "id"
+$entraIDUserCorrelationProperty = "id" # note when using the AD sync use "userPrincipalName" in combination with $helloIDUserCorrelationProperty = "userAttributes_userprincipalname"
 # The name of the property of HelloID users to match to Entra ID users
 # if using userAttributes, make sure to use it like this : userAttributes_<attributename> (userAttributes. will not work!)
 $helloIDUserCorrelationProperty = "immutableId" # Note, only works for Entra ID synced users. Example for local AD synced users: "userAttributes_userprincipalname"
@@ -486,8 +486,6 @@ try {
 
     # Filter for groups that are in products
     $entraIDGroupsInScope = $entraIDGroups
-    # $entraIDGroupsInScope = $null
-    # $entraIDGroupsInScope = $entraIDGroups | Where-Object { $_.$entraIDGroupCorrelationProperty -in $PowerShellActionGroupsInScope }
     
     if (($entraIDGroupsInScope | Measure-Object).Count -eq 0) {
         throw "No Entra ID Groups have been found"
@@ -504,9 +502,9 @@ try {
         $totalEntraIDGroupMembers = 0
         foreach ($entraIDGroup in $entraIDGroupsInScope) {
             try {
-                # if ($verboseLogging -eq $true) {
-                #     Hid-Write-Status -Event Information -Message "Querying Entra ID groupmembers of group [$($entraIDGroup.id)]"
-                # }
+                if ($verboseLogging -eq $true) {
+                    Hid-Write-Status -Event Information -Message "Querying Entra ID groupmembers of group [$($entraIDGroup.id)]"
+                }
 
                 $properties = @(
                     $entraIDUserCorrelationProperty
@@ -548,9 +546,6 @@ try {
                     }
                 }
 
-                # # Filter for user objects
-                # $entraIDGroupmembers = $entraIDGroupmembers | Where-Object { $_.objectClass -eq "user" }
-
                 # Filter for users that exist in HelloID
                 $entraIDGroupMembersInScope = $null
                 $entraIDGroupMembersInScope = $entraIDGroupmembers | Where-Object { $_.$entraIDUserCorrelationProperty -in $helloIDUsersInScope.$helloIDUserCorrelationProperty }
@@ -558,11 +553,7 @@ try {
                 # Set property of Entra ID group with members
                 $entraIDGroup.members = $entraIDGroupMembersInScope
 
-                # if ($verboseLogging -eq $true) {
-                #     Hid-Write-Status -Event Success -Message "Successfully queried Entra ID groupmembers of group [$($entraIDGroup.id)] (after filtering for users that exist in HelloID). Result count: $(($entraIDGroupMembersInScope | Measure-Object).Count)"                
-                # }
-
-                foreach ($entraIDGroupmember in $entraIDGroupmembers) {
+                foreach ($entraIDGroupmember in $entraIDGroupMembersInScope) {
                     $totalEntraIDGroupMembers++
                 }
             }
@@ -608,18 +599,11 @@ try {
     $obsoleteProductAssignmentObjects = [System.Collections.ArrayList]@()
     $existingProductAssignmentObjects = [System.Collections.ArrayList]@()
     foreach ($product in $helloIDSelfServiceProductsInScopeWithActionsInScope) {
-        # if ($verboseLogging -eq $true) {
-        #     Hid-Write-Status -Event Information -Message "Calculating new and obsolete product assignments for Product [$($product.name)]"
-        # }
+        if ($verboseLogging -eq $true) {
+            Hid-Write-Status -Event Information -Message "Calculating new and obsolete product assignments for Product [$($product.name)]"
+        }
 
         $entraIDGroupGuid = [Guid]::New(($product.code.replace("$ProductSkuPrefix", "")))
-
-        # Get Group from Product Action
-        # $productActionsInScope = $helloIDSelfServiceProductActionsInScope | Where-Object { $_.objectGUID -eq $product.selfServiceProductGUID }
-        # $variablesInScope = [PSCustomObject]$productActionsInScope | Select-Object -ExpandProperty variables
-        # $groupName = [PSCustomObject]$variablesInScope | Where-Object { $_.name -eq "$PowerShellActionVariableCorrelationProperty" } | Select-Object value | Sort-Object value -Unique | Select-Object -ExpandProperty value
-        # Hid-Write-Status -Event Warning -Message "groupName [$($groupName)]"
-        # Hid-Write-Status -Event Warning -Message "entraIDGroupsGrouped [$($entraIDGroupsGrouped)]"
         $entraIDGroup = $null
         $entraIDGroup = $entraIDGroupsGrouped["$($entraIDGroupGuid)"]
         if (($entraIDGroup | Measure-Object).Count -eq 0) {
@@ -633,8 +617,6 @@ try {
 
         # Get Entra ID user objects for additional data to match to HelloID user
         $entraIDUsersInScope = $entraIDGroup.members
-
-        Hid-Write-Status -Event Information -Message "entraIDUsersInScope[$($entraIDUsersInScope)]"
         
         # Get HelloID user objects to assign to the product
         $productUsersInScope = [System.Collections.ArrayList]@()
@@ -792,9 +774,9 @@ try {
     $productAssigmentRevokesError = 0
     foreach ($obsoleteProductAssignmentObject in $obsoleteProductAssignmentObjects) { 
         try {
-            # if ($verboseLogging -eq $true) {
-            #     Hid-Write-Status -Event Information -Message "Revoking productassignment for HelloID user [$($obsoleteProductAssignmentObject.username) ($($obsoleteProductAssignmentObject.userGuid))] to HelloID Self service Product [$($obsoleteProductAssignmentObject.productName) ($($obsoleteProductAssignmentObject.productGuid))]""
-            # }
+            if ($verboseLogging -eq $true) {
+                Hid-Write-Status -Event Information -Message "Revoking productassignment for HelloID user [$($obsoleteProductAssignmentObject.username) ($($obsoleteProductAssignmentObject.userGuid))] to HelloID Self service Product [$($obsoleteProductAssignmentObject.productName) ($($obsoleteProductAssignmentObject.productGuid))]"
+            }
             
             $body = @{
                 productGuid            = "$($obsoleteProductAssignmentObject.productGuid)"
