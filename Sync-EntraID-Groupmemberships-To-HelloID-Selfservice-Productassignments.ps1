@@ -28,7 +28,7 @@ $WarningPreference = "Continue"
 #EntraID Connection Configuration
 $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
 # $EntraTenantId = "" # Set from Global Variable
-# $EntraAppID = "" # Set from Global Variable
+# $EntraAppId = "" # Set from Global Variable
 # $EntraAppSecret = "" # Set from Global Variable
 
 $entraIDGroupsSearchFilter = "`$search=`"displayName:department_`"" # Optional, when no filter is provided ($entraIDGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections
@@ -435,7 +435,7 @@ catch {
 Hid-Write-Status -Event Information -Message "------[Entra ID]-----------"  
 #region Entra ID Groups and members
 try {  
-    $headers = New-AuthorizationHeaders -TenantId $EntraTenantId -ClientId $EntraAppID -ClientSecret $EntraAppSecret
+    $headers = New-AuthorizationHeaders -TenantId $EntraTenantId -ClientId $EntraAppId -ClientSecret $EntraAppSecret
 
     $properties = @(
         $entraIDGroupCorrelationProperty
