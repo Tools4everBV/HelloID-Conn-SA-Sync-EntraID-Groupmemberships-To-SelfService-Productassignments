@@ -366,8 +366,6 @@ try {
                     objectGUID = $helloIDSelfServiceProductInScope.selfServiceProductGUID
                 }
                 
-                Hid-Write-Status -Event Success -Message "helloIDSelfServiceProductActionObject1 $($helloIDSelfServiceProductActionObject.objectGUID)"
-
                 [void]$helloIDSelfServiceProductInScopeWithActionsObject.actions.Add($helloIDSelfServiceProductActionObject)
             }
 
