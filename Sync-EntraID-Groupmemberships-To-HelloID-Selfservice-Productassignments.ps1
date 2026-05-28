@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-SA-Sync-AD-Groupmemberships-To-HelloID-Selfservice-Productassignments
 #
-# Version: 2.0.1
+# Version: 2.1.2
 #####################################################
 
 # Set to false to acutally perform actions - Only run as DryRun when testing/troubleshooting!
@@ -27,9 +27,10 @@ $WarningPreference = "Continue"
 
 #EntraID Connection Configuration
 $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
-# $EntraTenantId = "" # Set from Global Variable
-# $EntraAppId = "" # Set from Global Variable
-# $EntraAppSecret = "" # Set from Global Variable
+# $EntraIdTenantId = "" # Set from Global Variable
+# $EntraIdAppId = "" # Set from Global Variable
+# $EntraIdCertificateBase64String = "" # Set from Global Variable
+# $EntraIdCertificatePassword = "" # Set from Global Variable
 
 $entraIDGroupsSearchFilter = "`$search=`"displayName:department_`"" # Optional, when no filter is provided ($entraIDGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections
 
@@ -43,10 +44,10 @@ $PowerShellActionVariableCorrelationProperty = "GroupId"
 # The name of the property of AD groups to match Groups in HelloID Self service Product actions (the group)
 $entraIDGroupCorrelationProperty = "id"
 # The name of the property of Entra ID users to match to HelloID users
-$entraIDUserCorrelationProperty = "id" # note when using the AD sync use "userPrincipalName" in combination with $helloIDUserCorrelationProperty = "userAttributes_userprincipalname"
+$entraIDUserCorrelationProperty = "userPrincipalName" # note when using the AD sync use "userPrincipalName" in combination with $helloIDUserCorrelationProperty = "userName"
 # The name of the property of HelloID users to match to Entra ID users
 # if using userAttributes, make sure to use it like this : userAttributes_<attributename> (userAttributes. will not work!)
-$helloIDUserCorrelationProperty = "immutableId" # Note, only works for Entra ID synced users. Example for local AD synced users: "userAttributes_userprincipalname"
+$helloIDUserCorrelationProperty = "userName" # Note, only works for Entra ID synced users. Example for local AD synced users: "userName"
 
 #region functions
 function Resolve-HTTPError {
@@ -205,50 +206,113 @@ function Invoke-HIDRestmethod {
     }
 }
 
-function New-AuthorizationHeaders {
+function Get-MSEntraAccessToken {
     [CmdletBinding()]
-    [OutputType([System.Collections.Generic.Dictionary[[String], [String]]])]
     param(
-        [parameter(Mandatory)]
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        $Certificate,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]
-        $TenantId,
-
-        [parameter(Mandatory)]
+        $AppId,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
         [string]
-        $ClientId,
-
-        [parameter(Mandatory)]
-        [string]
-        $ClientSecret
+        $TenantId
     )
     try {
-        Write-Verbose "Creating Access Token"
-        $authUri = "https://login.microsoftonline.com/$($TenantId)/oauth2/token"
-    
-        $body = @{
-            grant_type    = "client_credentials"
-            client_id     = "$ClientId"
-            client_secret = "$ClientSecret"
-            resource      = "https://graph.microsoft.com"
+        # Get the DER encoded bytes of the certificate
+        $derBytes = $Certificate.RawData
+
+        # Compute the SHA-256 hash of the DER encoded bytes
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $hashBytes = $sha256.ComputeHash($derBytes)
+        $base64Thumbprint = [System.Convert]::ToBase64String($hashBytes).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
+        # Create a JWT (JSON Web Token) header
+        $header = @{
+            'alg'      = 'RS256'
+            'typ'      = 'JWT'
+            'x5t#S256' = $base64Thumbprint
+        } | ConvertTo-Json
+        $base64Header = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($header))
+
+        # Calculate the Unix timestamp (seconds since 1970-01-01T00:00:00Z) for 'exp', 'nbf' and 'iat'
+        $currentUnixTimestamp = [math]::Round(((Get-Date).ToUniversalTime() - ([datetime]'1970-01-01T00:00:00Z').ToUniversalTime()).TotalSeconds)
+
+        # Create a JWT payload
+        $payload = [Ordered]@{
+            'iss' = "$($AppId)"
+            'sub' = "$($AppId)"
+            'aud' = "https://login.microsoftonline.com/$($TenantId)/oauth2/token"
+            'exp' = ($currentUnixTimestamp + 3600) # Expires in 1 hour
+            'nbf' = ($currentUnixTimestamp - 300) # Not before 5 minutes ago
+            'iat' = $currentUnixTimestamp
+            'jti' = [Guid]::NewGuid().ToString()
+        } | ConvertTo-Json
+        $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
+        # Extract the private key from the certificate
+        $rsaPrivate = $Certificate.PrivateKey
+        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
+
+        # Sign the JWT
+        $signatureInput = "$base64Header.$base64Payload"
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
+        # Create the JWT token
+        $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
+
+        $createEntraAccessTokenBody = @{
+            grant_type            = 'client_credentials'
+            client_id             = $AppId
+            client_assertion_type = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+            client_assertion      = $jwtToken
+            resource              = 'https://graph.microsoft.com'
         }
-    
-        $Response = Invoke-RestMethod -Method POST -Uri $authUri -Body $body -ContentType 'application/x-www-form-urlencoded'
-        $accessToken = $Response.access_token
-    
-        #Add the authorization header to the request
-        Write-Verbose 'Adding Authorization headers'
 
-        $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Authorization', "Bearer $accesstoken")
-        $headers.Add('Accept', 'application/json')
-        $headers.Add('Content-Type', 'application/json')
-        # Needed to filter on specific attributes (https://docs.microsoft.com/en-us/graph/aad-advanced-queries)
-        $headers.Add('ConsistencyLevel', 'eventual')
+        $createEntraAccessTokenSplatParams = @{
+            Uri         = "https://login.microsoftonline.com/$($TenantId)/oauth2/token"
+            Body        = $createEntraAccessTokenBody
+            Method      = 'POST'
+            ContentType = 'application/x-www-form-urlencoded'
+            Verbose     = $false
+            ErrorAction = 'Stop'
+        }
 
-        Write-Output $headers  
+        $createEntraAccessTokenResponse = Invoke-RestMethod @createEntraAccessTokenSplatParams
+        Write-Output $createEntraAccessTokenResponse.access_token
     }
     catch {
-        throw $_
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
+function Get-MSEntraCertificate {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $CertificateBase64String,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $CertificatePassword
+    )
+    try {
+        $rawCertificate = [system.convert]::FromBase64String($CertificateBase64String)
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $CertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        Write-Output $certificate
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
     }
 }
 
@@ -433,7 +497,22 @@ catch {
 Hid-Write-Status -Event Information -Message "------[Entra ID]-----------"  
 #region Entra ID Groups and members
 try {  
-    $headers = New-AuthorizationHeaders -TenantId $EntraTenantId -ClientId $EntraAppId -ClientSecret $EntraAppSecret
+    # Convert base64 certificate string to certificate object
+    $certificate = Get-MSEntraCertificate -CertificateBase64String $EntraIdCertificateBase64String -CertificatePassword $EntraIdCertificatePassword
+    Write-Verbose "Converted base64 certificate string to certificate object"
+
+    # Create access token
+    $entraToken = Get-MSEntraAccessToken -Certificate $certificate -AppId $EntraIdAppId -TenantId $EntraIdTenantId
+    Write-Verbose "Created access token"
+
+    # Create headers
+    $headers = @{
+        "Authorization"    = "Bearer $($entraToken)"
+        "Accept"           = "application/json"
+        "Content-Type"     = "application/json"
+        "ConsistencyLevel" = "eventual" # Needed to filter on specific attributes (https://docs.microsoft.com/en-us/graph/aad-advanced-queries)
+    }
+    Write-Verbose "Created headers"
 
     $properties = @(
         $entraIDGroupCorrelationProperty
