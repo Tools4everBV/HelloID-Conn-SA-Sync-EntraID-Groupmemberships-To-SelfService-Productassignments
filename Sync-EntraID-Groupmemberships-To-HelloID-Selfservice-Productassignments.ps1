@@ -37,6 +37,7 @@ $entraIDGroupsSearchFilter = "`$search=`"displayName:department_`"" # Optional, 
 #HelloID Self service Product Configuration
 $ProductSkuPrefix = 'ENTRAGRP' # Optional, when no SkuPrefix is provided ($ProductSkuPrefix = $null), all products will be queried
 $PowerShellActionName = "Add-EntraIDUserToEntraIDGroup" # Define the name of the PowerShell action
+$commentRequired = $false # Set to $true if comment is configured as required
 
 #Correlation Configuration
 # The name of the property of HelloID Self service Product action variables to match to AD Groups (name of the variable of the PowerShell action that contains the group)
@@ -802,7 +803,7 @@ try {
                 source                 = "$($newProductAssignmentObject.source)"
                 executeApprovalActions = $newProductAssignmentObject.executeApprovalActions
             }
-            
+
             if ($commentRequired -eq $true) {
                 $body['comment'] = "Granted by synchronization of Entra ID group memberships to HelloID Self service Productassignments"
             }
