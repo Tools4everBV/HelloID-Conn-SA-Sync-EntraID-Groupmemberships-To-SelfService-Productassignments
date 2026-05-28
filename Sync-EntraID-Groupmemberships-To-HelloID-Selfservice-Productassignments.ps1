@@ -801,7 +801,11 @@ try {
                 userGuid               = "$($newProductAssignmentObject.userGuid)"
                 source                 = "$($newProductAssignmentObject.source)"
                 executeApprovalActions = $newProductAssignmentObject.executeApprovalActions
-            } | ConvertTo-Json
+            }
+            if ($commentRequired -eq $true) {
+                $body['comment'] = "Granted by synchronization of Entra ID group memberships to HelloID Self service Productassignments"
+            }
+            $body = $body | ConvertTo-Json
 
             $splatParams = @{
                 Method      = "POST"

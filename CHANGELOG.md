@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secret authentication to certificate authentication
 - Default look to `userPrincipalName` and `userName` to make link accounts.
 
+### Added
+- Added support for comment [#2](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-EntraID-Groupmemberships-To-SelfService-Productassignments/issues/2)
+
 ## [2.0.2] - 2025-11-06
 
 ### Fixed
