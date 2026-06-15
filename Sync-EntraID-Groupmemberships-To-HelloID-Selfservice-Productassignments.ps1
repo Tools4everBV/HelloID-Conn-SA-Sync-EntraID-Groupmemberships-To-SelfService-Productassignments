@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-SA-Sync-AD-Groupmemberships-To-HelloID-Selfservice-Productassignments
 #
-# Version: 2.1.2
+# Version: 2.1.0
 #####################################################
 
 # Set to false to acutally perform actions - Only run as DryRun when testing/troubleshooting!
@@ -20,10 +20,10 @@ $WarningPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
 
 # Make sure to create the Global variables defined below in HelloID
-#HelloID Connection Configuration
-# $script:PortalBaseUrl = "" # Set from Global Variable
-# $portalApiKey ="" # Set from Global Variable
-# $portalApiSecret = "" # Set from Global Variable
+# HelloID API connection (required)
+# $helloIDPortalBaseUrl = $portalBaseUrl # When running from HelloID, set from default Global Variable
+# $helloIDPortalApiKey = $portalApiKey # When running from HelloID, set from default Global Variable
+# $helloIDPortalApiSecret = $portalApiSecret # When running from HelloID, set from default Global Variable
 
 #EntraID Connection Configuration
 $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
@@ -51,6 +51,78 @@ $entraIDUserCorrelationProperty = "userPrincipalName" # note when using the AD s
 $helloIDUserCorrelationProperty = "userName" # Note, only works for Entra ID synced users. Example for local AD synced users: "userName"
 
 #region functions
+function Write-StatusMessage {
+    <#
+    .SYNOPSIS
+    Writes a status message to the appropriate logging system.
+    
+    .DESCRIPTION
+    When running locally: Uses native PowerShell cmdlets (Write-Information, Write-Warning, Write-Error)
+    When running in HelloID: Uses HelloID's native Hid-Write-Status function
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Message,
+
+        [Parameter(Mandatory = $true)]
+        [String]
+        $Event
+    )
+    
+    if ($null -eq $portalBaseUrl) {
+        # Running locally - use native PowerShell cmdlets
+        switch ($Event) {
+            "Information" { Write-Information ($Message) -InformationAction Continue }
+            "Warning" { Write-Warning ($Message) -WarningAction Continue }
+            "Success" { Write-Information ($Message) -InformationAction Continue }
+            "Error" { Write-Error ($Message) -ErrorAction Continue }
+            "Critical" { Write-Error ($Message) -ErrorAction Continue }
+            "Failed" { Write-Error ($Message) -ErrorAction Continue }
+        }
+    }
+    else {
+        # Running in HelloID - use native HelloID function
+        Hid-Write-Status -Message $Message -Event $Event
+    }
+}
+
+function Write-SummaryMessage {
+    <#
+    .SYNOPSIS
+    Writes a summary message to the appropriate logging system.
+    
+    .DESCRIPTION
+    When running locally: Uses native PowerShell cmdlets (Write-Information, Write-Warning, Write-Error)
+    When running in HelloID: Uses HelloID's native Hid-Write-Summary function
+    #>
+    [cmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Message,
+
+        [Parameter(Mandatory = $true)]
+        [String]
+        $Event
+    )
+    
+    if ($null -eq $portalBaseUrl) {
+        # Running locally - use native PowerShell cmdlets
+        switch ($Event) {
+            "Information" { Write-Information ($Message) -InformationAction Continue }
+            "Warning" { Write-Warning ($Message) -WarningAction Continue }
+            "Success" { Write-Information ($Message) -InformationAction Continue }
+            "Error" { Write-Error ($Message) -ErrorAction Continue }
+            "Critical" { Write-Error ($Message) -ErrorAction Continue }
+            "Failed" { Write-Error ($Message) -ErrorAction Continue }
+        }
+    }
+    else {
+        # Running in HelloID - use native HelloID function
+        Hid-Write-Summary -Message $Message -Event $Event
+    }
+}
+
 function Resolve-HTTPError {
     [CmdletBinding()]
     param (
@@ -143,7 +215,7 @@ function Invoke-HIDRestmethod {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
         Write-Verbose "Setting authorization headers"
-        $apiKeySecret = "$($portalApiKey):$($portalApiSecret)"
+        $apiKeySecret = "$($helloIDPortalApiKey):$($helloIDPortalApiSecret)"
         $base64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($apiKeySecret))
         $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $headers.Add("Authorization", "Basic $base64")
@@ -151,7 +223,7 @@ function Invoke-HIDRestmethod {
         $headers.Add("Accept", $ContentType)
 
         $splatWebRequest = @{
-            Uri             = "$($script:PortalBaseUrl)/api/v1/$($Uri)"
+            Uri             = "$($helloIDPortalBaseUrl)/api/v1/$($Uri)"
             Headers         = $headers
             Method          = $Method
             UseBasicParsing = $true
@@ -164,7 +236,7 @@ function Invoke-HIDRestmethod {
             $skip = 0
             $take = $PageSize
             Do {
-                $splatWebRequest["Uri"] = "$($script:PortalBaseUrl)/api/v1/$($Uri)?skip=$($skip)&take=$($take)"
+                $splatWebRequest["Uri"] = "$($helloIDPortalBaseUrl)/api/v1/$($Uri)?skip=$($skip)&take=$($take)"
 
                 Write-Verbose "Invoking [$Method] request to [$Uri]"
                 $response = $null
@@ -320,8 +392,8 @@ function Get-MSEntraCertificate {
 #endregion functions
 
 #region script
-Hid-Write-Status -Event Information -Message "Starting synchronization of Entra ID groupmemberships to HelloID Self service Productassignments"
-Hid-Write-Status -Event Information -Message "------[HelloID]------"
+Write-StatusMessage -Event Information -Message "Starting synchronization of Entra ID groupmemberships to HelloID Self service Productassignments"
+Write-StatusMessage -Event Information -Message "------[HelloID]------"
 
 #region Get HelloID Products
 try {
@@ -343,13 +415,13 @@ try {
         $helloIDSelfServiceProductsInScope = $helloIDSelfServiceProducts
     }
 
-    Hid-Write-Status -Event Success -Message "Successfully queried Self service products from HelloID (after filtering for products with specified sku prefix only). Result count: $(($helloIDSelfServiceProductsInScope | Measure-Object).Count)"
+    Write-StatusMessage -Event Success -Message "Successfully queried Self service products from HelloID (after filtering for products with specified sku prefix only). Result count: $(($helloIDSelfServiceProductsInScope | Measure-Object).Count)"
 }
 catch {
     $ex = $PSItem
     $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-    Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
     throw "Error querying Self service products from HelloID. Error Message: $($errorMessage.AuditErrorMessage)"
 }
@@ -387,13 +459,13 @@ try {
     $helloIDUsersInScope = $helloIDUsers | Where-Object { -not([string]::IsNullOrEmpty($_.$helloIDUserCorrelationProperty)) }
 
     $helloIDUsersInScopeGrouped = $helloIDUsersInScope | Group-Object -Property $helloIDUserCorrelationProperty -AsHashTable -AsString
-    Hid-Write-Status -Event Success -Message "Successfully queried Users from HelloID. Result count: $(($helloIDUsersInScope | Measure-Object).Count)"
+    Write-StatusMessage -Event Success -Message "Successfully queried Users from HelloID. Result count: $(($helloIDUsersInScope | Measure-Object).Count)"
 }
 catch {
     $ex = $PSItem
     $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-    Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
     throw "Error querying Users from HelloID. Error Message: $($errorMessage.AuditErrorMessage)"
 }
@@ -444,7 +516,7 @@ try {
             $ex = $PSItem
             $errorMessage = Get-ErrorMessage -ErrorObject $ex
         
-            Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+            Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
         
             throw "Error querying actions of Product [$($helloIDSelfServiceProductInScope.productId)]. Error Message: $($errorMessage.AuditErrorMessage)"
         }
@@ -454,13 +526,13 @@ try {
     # Filter for products with specified actions
     $helloIDSelfServiceProductsInScopeWithActionsInScope = $helloIDSelfServiceProductsInScopeWithActions | Where-Object { $PowerShellActionName -in $_.actions.name }
 
-    Hid-Write-Status -Event Success -Message "Successfully queried HelloID Self service Products with Actions (after filtering for products with specified action only). Result count: $(($helloIDSelfServiceProductsInScopeWithActionsInScope.actions | Measure-Object).Count)"
+    Write-StatusMessage -Event Success -Message "Successfully queried HelloID Self service Products with Actions (after filtering for products with specified action only). Result count: $(($helloIDSelfServiceProductsInScopeWithActionsInScope.actions | Measure-Object).Count)"
 }
 catch {
     $ex = $PSItem
     $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-    Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
     throw "Error querying HelloID Self service Products with Actions. Error Message: $($errorMessage.AuditErrorMessage)"
 }
@@ -483,19 +555,19 @@ try {
     $helloIDSelfServiceProductassignmentsInScope = $helloIDSelfServiceProductassignments | Where-Object { $_.productGuid -in $helloIDSelfServiceProductsInScopeWithActionsInScope.productId }
 
     $helloIDSelfServiceProductassignmentsInScopeGrouped = $helloIDSelfServiceProductassignmentsInScope | Group-Object -Property productGuid -AsHashTable -AsString
-    Hid-Write-Status -Event Success -Message "Successfully queried Self service Productassignments from HelloID (after filtering for productassignments of specified products only). Result count: $(($helloIDSelfServiceProductassignmentsInScope | Measure-Object).Count)"
+    Write-StatusMessage -Event Success -Message "Successfully queried Self service Productassignments from HelloID (after filtering for productassignments of specified products only). Result count: $(($helloIDSelfServiceProductassignmentsInScope | Measure-Object).Count)"
 }
 catch {
     $ex = $PSItem
     $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-    Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
     throw "Error querying Self service Productassignments from HelloID. Error Message: $($errorMessage.AuditErrorMessage)"
 }
 #endregion Get HelloID Productassignments
 
-Hid-Write-Status -Event Information -Message "------[Entra ID]-----------"  
+Write-StatusMessage -Event Information -Message "------[Entra ID]-----------"  
 #region Entra ID Groups and members
 try {  
     # Convert base64 certificate string to certificate object
@@ -569,7 +641,7 @@ try {
         throw "No Entra ID Groups have been found"
     }
 
-    Hid-Write-Status -Event Success -Message "Successfully queried Entra ID groups (after filtering for groups that are in products). Result count: $(($entraIDGroupsInScope | Measure-Object).Count)"
+    Write-StatusMessage -Event Success -Message "Successfully queried Entra ID groups (after filtering for groups that are in products). Result count: $(($entraIDGroupsInScope | Measure-Object).Count)"
 
     # Get Entra ID Groupmemberships of groups
     try {
@@ -647,13 +719,13 @@ try {
             }
         }
 
-        Hid-Write-Status -Event Success -Message "Successfully enhanced Entra ID groups with members (after filtering for users that exist in HelloID). Result count: $($totalEntraIDGroupMembers)"
+        Write-StatusMessage -Event Success -Message "Successfully enhanced Entra ID groups with members (after filtering for users that exist in HelloID). Result count: $($totalEntraIDGroupMembers)"
     }
     catch {
         $ex = $PSItem
         $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-        Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+        Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
         throw "Error querying Entra ID groupmembers. Error Message: $($errorMessage.AuditErrorMessage)"
     }
@@ -664,13 +736,13 @@ catch {
     $ex = $PSItem
     $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-    Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
     throw "Error querying Entra ID groups that match filter [$($entraIDGroupsSearchFilter)]. Error Message: $($errorMessage.AuditErrorMessage)"
 }
 #endregion Entra ID Groups and members
 
-Hid-Write-Status -Event Information -Message "------[Calculations of combined data]------"
+Write-StatusMessage -Event Information -Message "------[Calculations of combined data]------"
 # Calculate new and obsolete product assignments
 try {
     $newProductAssignmentObjects = [System.Collections.ArrayList]@()
@@ -685,11 +757,11 @@ try {
         $entraIDGroup = $null
         $entraIDGroup = $entraIDGroupsGrouped["$($entraIDGroupGuid)"]
         if (($entraIDGroup | Measure-Object).Count -eq 0) {
-            Hid-Write-Status -Event Error -Message "No Entra ID group found with $entraIDGroupCorrelationProperty [$($entraIDGroupGuid)] for Product [$($product.name)]"
+            Write-StatusMessage -Event Error -Message "No Entra ID group found with $entraIDGroupCorrelationProperty [$($entraIDGroupGuid)] for Product [$($product.name)]"
             continue
         }
         elseif (($entraIDGroup | Measure-Object).Count -gt 1) {
-            Hid-Write-Status -Event Error -Message "Multiple Entra ID groups found with $entraIDGroupCorrelationProperty [$($entraIDGroupGuid)] for Product [$($product.name)]. Please correct this so the $entraIDGroupCorrelationProperty of the AD group is unique"
+            Write-StatusMessage -Event Error -Message "Multiple Entra ID groups found with $entraIDGroupCorrelationProperty [$($entraIDGroupGuid)] for Product [$($product.name)]. Please correct this so the $entraIDGroupCorrelationProperty of the AD group is unique"
             continue
         }
 
@@ -704,8 +776,7 @@ try {
 
             if (($helloIDUser | Measure-Object).Count -eq 0) {
                 if ($verboseLogging -eq $true) {
-                    Write-Verbose "No HelloID user found with $helloIDUserCorrelationProperty [$($entraIDUser.$entraIDUserCorrelationProperty)] for Entra ID user [$($entraIDUser.distinguishedName)] for Product [$($product.name)]"
-                    continue
+                    Write-Verbose "No HelloID user found with $helloIDUserCorrelationProperty [$($entraIDUser.$entraIDUserCorrelationProperty)] for Entra ID user [$($entraIDUser.displayName)] for Product [$($product.name)]"
                 }
             }
             else {
@@ -742,7 +813,7 @@ try {
                 productName            = "$($product.name)"
                 userGuid               = "$($obsoleteProductassignment.userGuid)"
                 userName               = "$($obsoleteProductassignment.userName)"
-                source                 = "SyncADGroupMemberShipsToProductAssignments"
+                source                 = "SyncEntraIDGroupMemberShipsToProductAssignments"
                 executeApprovalActions = $false
             }
     
@@ -757,7 +828,7 @@ try {
                 productName            = "$($product.name)"
                 userGuid               = "$($existingProductassignment.userGuid)"
                 userName               = "$($existingProductassignment.userName)"
-                source                 = "SyncADGroupMemberShipsToProductAssignments"
+                source                 = "SyncEntraIDGroupMemberShipsToProductAssignments"
                 executeApprovalActions = $false
             }
     
@@ -772,22 +843,22 @@ catch {
     $ex = $PSItem
     $errorMessage = Get-ErrorMessage -ErrorObject $ex
 
-    Hid-Write-Status -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
 
     throw "Error calculating new and obsolete product assignments. Error Message: $($errorMessage.AuditErrorMessage)"
 }
 
-Hid-Write-Status -Event Information -Message "------[Summary]------"
+Write-StatusMessage -Event Information -Message "------[Summary]------"
 
-Hid-Write-Status -Event Information -Message "Total HelloID Self service Product(s) in scope [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)]"
+Write-StatusMessage -Event Information -Message "Total HelloID Self service Product(s) in scope [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)]"
 
-Hid-Write-Status -Event Information -Message "Total HelloID Self service Productassignment(s) already exist (and won't be changed) [$(($existingProductAssignmentObjects | Measure-Object).Count)]"
+Write-StatusMessage -Event Information -Message "Total HelloID Self service Productassignment(s) already exist (and won't be changed) [$(($existingProductAssignmentObjects | Measure-Object).Count)]"
 
-Hid-Write-Status -Event Information -Message "Total HelloID Self service Productassignment(s) to grant [$(($newProductAssignmentObjects | Measure-Object).Count)]"
+Write-StatusMessage -Event Information -Message "Total HelloID Self service Productassignment(s) to grant [$(($newProductAssignmentObjects | Measure-Object).Count)]"
 
-Hid-Write-Status -Event Information -Message "Total HelloID Self service Productassignment(s) to revoke [$(($obsoleteProductAssignmentObjects | Measure-Object).Count)]"
+Write-StatusMessage -Event Information -Message "Total HelloID Self service Productassignment(s) to revoke [$(($obsoleteProductAssignmentObjects | Measure-Object).Count)]"
 
-Hid-Write-Status -Event Information -Message "------[Processing]------------------"
+Write-StatusMessage -Event Information -Message "------[Processing]------------------"
 try {
     # Grant assignments
     $productAssigmentGrantsSuccess = 0
@@ -844,13 +915,13 @@ try {
     }
     if ($dryRun -eq $false) {
         if ($productAssigmentGrantsSuccess -ge 1 -or $productAssigmentGrantsError -ge 1) {
-            Hid-Write-Status -Event Information -Message "Granted productassignments to HelloID Self service Products. Success: $($productAssigmentGrantsSuccess). Error: $($productAssigmentGrantsError)"
-            Hid-Write-Summary -Event Information -Message "Granted productassignments to HelloID Self service Products. Success: $($productAssigmentGrantsSuccess). Error: $($productAssigmentGrantsError)"
+            Write-StatusMessage -Event Information -Message "Granted productassignments to HelloID Self service Products. Success: $($productAssigmentGrantsSuccess). Error: $($productAssigmentGrantsError)"
+            Write-SummaryMessage -Event Information -Message "Granted productassignments to HelloID Self service Products. Success: $($productAssigmentGrantsSuccess). Error: $($productAssigmentGrantsError)"
         }
     }
     else {
-        Hid-Write-Status -Event Warning -Message "DryRun: Would grant [$(($newProductAssignmentObjects | Measure-Object).Count)] productassignments for [$(($newProductAssignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
-        Hid-Write-Summary -Event Warning "DryRun: Would grant [$(($newProductAssignmentObjects | Measure-Object).Count)] productassignments for [$(($newProductAssignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
+        Write-StatusMessage -Event Warning -Message "DryRun: Would grant [$(($newProductAssignmentObjects | Measure-Object).Count)] productassignments for [$(($newProductAssignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
+        Write-SummaryMessage -Event Warning "DryRun: Would grant [$(($newProductAssignmentObjects | Measure-Object).Count)] productassignments for [$(($newProductAssignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
     }
 
     # Revoke assignments
@@ -901,29 +972,29 @@ try {
     }
     if ($dryRun -eq $false) {
         if ($productAssigmentRevokesSuccess -ge 1 -or $productAssigmentRevokesError -ge 1) {
-            Hid-Write-Status -Event Information -Message "Revoked productassignments to HelloID Self service Products. Success: $($productAssigmentRevokesSuccess). Error: $($productAssigmentRevokesError)"
-            Hid-Write-Summary -Event Information -Message "Revoked productassignments to HelloID Self service Products. Success: $($productAssigmentRevokesSuccess). Error: $($productAssigmentRevokesError)"
+            Write-StatusMessage -Event Information -Message "Revoked productassignments to HelloID Self service Products. Success: $($productAssigmentRevokesSuccess). Error: $($productAssigmentRevokesError)"
+            Write-SummaryMessage -Event Information -Message "Revoked productassignments to HelloID Self service Products. Success: $($productAssigmentRevokesSuccess). Error: $($productAssigmentRevokesError)"
         }
     }
     else {
-        Hid-Write-Status -Event Warning -Message "DryRun: Would revoke [$(($obsoleteProductassignmentObjects | Measure-Object).Count)] productassignments for [$(($obsoleteProductassignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
-        Hid-Write-Status -Event Warning -Message "DryRun: Would revoke [$(($obsoleteProductassignmentObjects | Measure-Object).Count)] productassignments for [$(($obsoleteProductassignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
+        Write-StatusMessage -Event Warning -Message "DryRun: Would revoke [$(($obsoleteProductassignmentObjects | Measure-Object).Count)] productassignments for [$(($obsoleteProductassignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
+        Write-SummaryMessage -Event Warning -Message "DryRun: Would revoke [$(($obsoleteProductassignmentObjects | Measure-Object).Count)] productassignments for [$(($obsoleteProductassignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
     }
 
     if ($dryRun -eq $false) {
-        Hid-Write-Status -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
-        Hid-Write-Summary -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        Write-StatusMessage -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        Write-SummaryMessage -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
     }
     else {
-        Hid-Write-Status -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
-        Hid-Write-Summary -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        Write-StatusMessage -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        Write-SummaryMessage -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
     }
 }
 catch {
-    Hid-Write-Status -Event Error -Message "Error synchronization of [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
-    Hid-Write-Status -Event Error -Message "Error at Line [$($_.InvocationInfo.ScriptLineNumber)]: $($_.InvocationInfo.Line)."
-    Hid-Write-Status -Event Error -Message "Exception message: $($_.Exception.Message)"
-    Hid-Write-Status -Event Error -Message "Exception details: $($_.errordetails)"
-    Hid-Write-Summary -Event Failed -Message "Error synchronization of [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+    Write-StatusMessage -Event Error -Message "Error synchronization of [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+    Write-StatusMessage -Event Error -Message "Error at Line [$($_.InvocationInfo.ScriptLineNumber)]: $($_.InvocationInfo.Line)."
+    Write-StatusMessage -Event Error -Message "Exception message: $($_.Exception.Message)"
+    Write-StatusMessage -Event Error -Message "Exception details: $($_.errordetails)"
+    Write-SummaryMessage -Event Failed -Message "Error synchronization of [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
 }
 #endregion
