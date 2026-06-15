@@ -1,15 +1,15 @@
 # HelloID-Conn-SA-Sync-EntraID-Groupmemberships-To-SelfService-Productassignments
-Synchronizes Entra ID groupmemberships to HelloID Self service productassignments
 
-<a href="https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments/network/members"><img src="https://img.shields.io/github/forks/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments" alt="Forks Badge"/></a>
-<a href="https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments/pulls"><img src="https://img.shields.io/github/issues-pr/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments" alt="Pull Requests Badge"/></a>
-<a href="https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments/issues"><img src="https://img.shields.io/github/issues/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments" alt="Issues Badge"/></a>
-<a href="https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments/graphs/contributors"><img alt="GitHub contributors" src="https://img.shields.io/github/contributors/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groupmemberships-To-SelfService-Productassignments?color=2b9348"></a>
+> [!IMPORTANT]
+> **Best Practice - Maximum Synchronization Frequency: Once per month**
+>
+> **Why this maximum?**
+> This sync processes large volumes (e.g., 1,000 groups with 100 members each = 100,000 assignments) and causes significant system load. It's designed as a **one-time migration** to bring existing permissions into HelloID Service Automation as product assignments.
+>
+> If a higher frequency is required for your organization, please contact **Tools4ever Support**. This helps us understand your use case and provide proper guidance.
 
-
-| :information_source: Information |
-|:---------------------------|
-| This repository contains the connector and configuration code only. The implementer is responsible to acquire the connection details such as username, password, certificate, etc. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements.       |
+> [!IMPORTANT]
+> This repository contains the connector and configuration code only. The implementer is responsible to acquire the connection details such as username, password, certificate, etc. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements.
 
 ## Table of Contents
 - [HelloID-Conn-SA-Sync-EntraID-Groupmemberships-To-SelfService-Productassignments](#helloid-conn-sa-sync-entraid-groupmemberships-to-selfservice-productassignments)
@@ -17,12 +17,10 @@ Synchronizes Entra ID groupmemberships to HelloID Self service productassignment
   - [Requirements](#requirements)
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
-  - [Getting started](#getting-started-1)
-    - [Create an API key and secret for HelloID](#create-an-api-key-and-secret-for-helloid)
-    - [Getting the Entra ID graph API access](#getting-the-entra-id-graph-api-access)
-      - [Application Registration](#application-registration)
-      - [Configuring App Permissions](#configuring-app-permissions)
-      - [Authentication and Authorization](#authentication-and-authorization)
+    - [Requirements](#requirements-1)
+    - [App Registration \& Certificate Setup](#app-registration--certificate-setup)
+    - [HelloID-specific configuration](#helloid-specific-configuration)
+    - [Convert .pfx to base64 string](#convert-pfx-to-base64-string)
     - [Synchronization settings](#synchronization-settings)
   - [Remarks](#remarks)
   - [Getting help](#getting-help)
@@ -48,77 +46,73 @@ This is intended for scenarios where the groupmemberships are managed by other s
 
 ## Getting started
 
-## Getting started
+### Requirements
 
-### Create an API key and secret for HelloID
-1. Go to the `Manage portal > Security > API` section.
-2. Click on the `Add Api key` button to create a new API key.
-3. Optionally, you can add a note that will describe the purpose of this API key
-4. Optionally, you can restrict the IP addresses from which this API key can be used.
-5. Click on the `Save` button to save the API key.
-6. Go to the `Manage portal > Automation > Variable library` section and confim that the auto variables specified in the [connection settings](#connection-settings) are available.
+- Windows PowerShell 5.1 installed on the server where the HelloID agent and Service Automation agent are running
+- **Not supported** with Cloud Agent (must run On-Premises)
+- An App Registration in Microsoft Entra ID configured with certificate-based authentication
+- The synchronization must be configured to meet your requirements before scheduling
 
-### Getting the Entra ID graph API access
+### App Registration & Certificate Setup
 
-By using this connector you will have the ability to manage Entra ID Guest accounts.
+Before implementing this scheduled task, you must configure a Microsoft Entra ID App Registration. During the setup process, you'll create a new App Registration in the Entra portal, assign the necessary API permissions, and generate and assign a certificate.
 
-#### Application Registration
-The first step to connect to Graph API and make requests, is to register a new <b>Entra ID Application</b>. The application is used to connect to the API and to manage permissions.
+Follow the official Microsoft documentation for creating an App Registration and setting up certificate-based authentication:
 
-* Navigate to <b>App Registrations</b> in Entra, and select “New Registration” (<b>Entra Portal > Entra ID Directory > App Registration > New Application Registration</b>).
-* Next, give the application a name. In this example we are using “<b>HelloID PowerShell</b>” as application name.
-* Specify who can use this application (<b>Accounts in this organizational directory only</b>).
-* Specify the Redirect URI. You can enter any url as a redirect URI value. In this example we used http://localhost because it doesn't have to resolve.
-* Click the “<b>Register</b>” button to finally create your new application.
+- [App-only authentication with certificate (Microsoft Graph)](https://learn.microsoft.com/en-us/graph/auth-register-app-v2)
 
-Some key items regarding the application are the Application ID (which is the Client ID), the Directory ID (which is the Tenant ID) and Client Secret.
+### HelloID-specific configuration
 
-#### Configuring App Permissions
-The [Microsoft Graph documentation](https://docs.microsoft.com/en-us/graph) provides details on which permission are required for each permission type.
+Once you have completed the Microsoft setup and followed their best practices, configure the following HelloID-specific requirements.
 
-To assign your application the right permissions, navigate to <b>Entra Portal > Entra ID Directory >App Registrations</b>.
-Select the application we created before, and select “<b>API Permissions</b>” or “<b>View API Permissions</b>”.
-To assign a new permission to your application, click the “<b>Add a permission</b>” button.
-From the “<b>Request API Permissions</b>” screen click “<b>Microsoft Graph</b>”.
-For this connector the following permissions are used as <b>Application permissions</b>:
-*	Read and Write all user’s full profiles by using <b><i>User.ReadWrite.All</i></b>
-*	Read and Write all groups in an organization’s directory by using <b><i>Group.ReadWrite.All</i></b>
-*	Read and Write data to an organization’s directory by using <b><i>Directory.ReadWrite.All</i></b>
+**API Permissions (Application permissions):**
 
-Some high-privilege permissions can be set to admin-restricted and require an administrators consent to be granted.
+- `Group.Read.All` - To read group information
+- `GroupMember.Read.All` - To read members from groups
 
-To grant admin consent to our application press the “<b>Grant admin consent for TENANT</b>” button.
+**Certificate:**
 
-#### Authentication and Authorization
-There are multiple ways to authenticate to the Graph API with each has its own pros and cons, in this example we are using the Authorization Code grant type.
+- Upload the public key file (.cer) in Entra ID
+- Provide the certificate as a Base64 string in HelloID
 
-*	First we need to get the <b>Client ID</b>, go to the <b>Entra Portal > Entra ID Directory > App Registrations</b>.
-*	Select your application and copy the Application (client) ID value.
-*	After we have the Client ID we also have to create a <b>Client Secret</b>.
-*	From the Entra Portal, go to <b>Entra ID Directory > App Registrations</b>.
-*	Select the application we have created before, and select "<b>Certificates and Secrets</b>". 
-*	Under “Client Secrets” click on the “<b>New Client Secret</b>” button to create a new secret.
-*	Provide a logical name for your secret in the Description field, and select the expiration date for your secret.
-*	It's IMPORTANT to copy the newly generated client secret, because you cannot see the value anymore after you close the page.
-*	At last we need to get the <b>Tenant ID</b>. This can be found in the Entra Portal by going to <b>Entra Active Directory > Overview</b>.
+> [!NOTE]
+> For more information about the required permissions, please see the Microsoft docs:
+> - [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference)
+> - [Find the permissions required to run any Microsoft Graph cmdlet](https://learn.microsoft.com/en-us/graph/permissions-reference)
+> - [View and assign administrator roles in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/manage-roles-portal)
+
+### Convert .pfx to base64 string
+
+HelloID requires a base64 string to import the certificate. Use the example below to create a base64 string:
+
+```powershell
+$filePath = 'C:\Cert'
+$pfxCertName = 'Cert.pfx'
+$pfxPath = "$filePath\$pfxCertName"
+
+$fileContentBytes = [System.IO.File]::ReadAllBytes("$pfxPath")
+[System.Convert]::ToBase64String($fileContentBytes) | Set-Content "$filePath\HelloID_Cert_Base64.txt"
+```
 
 ### Synchronization settings
 
-| Variable name | Description   | Notes |
-| ------------- | -----------   | ----- |
-| $portalBaseUrl    | String value of HelloID Base Url  | (Default Global Variable) |
-| $portalApiKey | String value of HelloID Api Key   | (Default Global Variable) |
-| $portalApiSecret  | String value of HelloID Api Secret    | (Default Global Variable) |
-| $EntraTenantId    | String value of Entra ID Tenant ID  | Recommended to set as Global Variable |
-| $EntraAppID | String value of Entra ID App ID  | Recommended to set as Global Variable |
-| $EntraAppSecret  | String value of Entra ID App Secret  | Recommended to set as Global Variable |
-| $entraIDGroupsSearchFilter   | String value of seachfilter of which Entra ID groups to include   | Optional, when no filter is provided ($entraIDGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections  |
-| $ProductSkuPrefix | String value of prefix filter of which HelloID Self service Products to include    | Optional, when no SkuPrefix is provided ($ProductSkuPrefix = $null), all products will be queried |
-| $PowerShellActionName | String value of name of the PowerShell action that grants the Entra ID user to the Entra ID group | The default value ("Add-EntraIDUserToEntraIDGroup") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groups-To-SelfService-Products)   |
-| $PowerShellActionVariableCorrelationProperty  | String value of name of the property of HelloID Self service Product action variables to match to Entra ID Groups (name of the variable of the PowerShell action that contains the group) | The default value ("GroupId") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groups-To-SelfService-Products), where Group is set as the variable name for the group for the Product actions. If your products are from a different source, change this accordingly (e.g. Group)   |
-| $entraIDGroupCorrelationProperty   | String value of name of the property of Entra ID groups to match Groups in HelloID Self service Product actions (the group) | The default value ("id") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groups-To-SelfService-Products), where the Entra ID group SamAccountName is set as the Group value for the Product actions. If your products are from a different source, change this accordingly (e.g. Name)   |
-| $entraIDUserCorrelationProperty    | String value of name of the property of Entra ID users to match to HelloID users    | The default value ("id") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groups-To-SelfService-Products), where the Entra ID user ID is set to the HelloID User immutableId. If your users are from a different source, change this accordingly (e.g. userPrincipalName)  |
-| $helloIDUserCorrelationProperty   | String value of name of the property of HelloID users to match to Entra ID users    | The default value ("immutableId") is set to match the value from the [Entra ID Sync](https://docs.helloid.com/en/access-management/directory-sync/azure-ad-sync.html), where the Entra ID user ID is set to the HelloID User immutableId. If your users are from a different source, change this accordingly (e.g. username)   |
+| Variable name                                | Description                                                                                                                                                                               | Notes                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| $portalBaseUrl                               | String value of HelloID Base Url                                                                                                                                                          | (Default Global Variable)                                                                                                                                                                                                                                                                                                                                                 |
+| $portalApiKey                                | String value of HelloID Api Key                                                                                                                                                           | (Default Global Variable)                                                                                                                                                                                                                                                                                                                                                 |
+| $portalApiSecret                             | String value of HelloID Api Secret                                                                                                                                                        | (Default Global Variable)                                                                                                                                                                                                                                                                                                                                                 |
+| $EntraIdTenantId                             | String value of Entra ID Tenant ID                                                                                                                                                        | Recommended to set as Global Variable                                                                                                                                                                                                                                                                                                                                     |
+| $EntraIdAppId                                | String value of Entra ID App ID                                                                                                                                                           | Recommended to set as Global Variable                                                                                                                                                                                                                                                                                                                                     |
+| $EntraIdCertificateBase64String              | Base64 string of Entra ID App Certificate                                                                                                                                                 | Recommended to set as Global Variable                                                                                                                                                                                                                                                                                                                                     |
+| $EntraIdCertificatePassword                  | Password of Entra ID App Certificate                                                                                                                                                      | Recommended to set as Global Variable                                                                                                                                                                                                                                                                                                                                     |
+| $entraIDGroupsSearchFilter                   | String value of seachfilter of which Entra ID groups to include                                                                                                                           | Optional, when no filter is provided ($entraIDGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections                                                           |
+| $ProductSkuPrefix                            | String value of prefix filter of which HelloID Self service Products to include                                                                                                           | Optional, when no SkuPrefix is provided ($ProductSkuPrefix = $null), all products will be queried                                                                                                                                                                                                                                                                         |
+| $PowerShellActionName                        | String value of name of the PowerShell action that grants the Entra ID user to the Entra ID group                                                                                         | The default value ("Add-EntraIDUserToEntraIDGroup") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-AzureActiveDirectory-Groups-To-SelfService-Products)                                                                                                                                       |
+| $PowerShellActionVariableCorrelationProperty | String value of name of the property of HelloID Self service Product action variables to match to Entra ID Groups (name of the variable of the PowerShell action that contains the group) | The default value ("GroupId") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-EntraID-Groups-To-SelfService-Products), where Group is set as the variable name for the group for the Product actions. If your products are from a different source, change this accordingly (e.g. Group)       |
+| $entraIDGroupCorrelationProperty             | String value of name of the property of Entra ID groups to match Groups in HelloID Self service Product actions (the group)                                                               | The default value ("id") is set to match the value from the [Entra ID Groups to Products Sync](https://github.com/Tools4everBV/HelloID-Conn-SA-Sync-EntraID-Groups-To-SelfService-Products), where the Entra ID group SamAccountName is set as the Group value for the Product actions. If your products are from a different source, change this accordingly (e.g. Name) |
+| $entraIDUserCorrelationProperty              | String value of name of the property of Entra ID users to match to HelloID users                                                                                                          | The default value `userPrincipalName`                                                                                                                                                                                                                                                                                                                                     |
+| $helloIDUserCorrelationProperty              | String value of name of the property of HelloID users to match to Entra ID users                                                                                                          | The default value is `userName`                                                                                                                                                                                                                                                                                                                                           |
+| $commendRequired                             | Set to `$true` if comment is configured as required                                                                                                                     |       The default value is `$false`                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## Remarks
 - The Productassignments are granted and revoked. Make sure your configuration is correct to avoid unwanted revokes
@@ -126,8 +120,6 @@ There are multiple ways to authenticate to the Graph API with each has its own p
 
 ## Getting help
 > _For more information on how to configure a HelloID PowerShell scheduled task, please refer to our [documentation](https://docs.helloid.com/hc/en-us/articles/115003253294-Create-Custom-Scheduled-Tasks) pages_
-
-> _If you need help, feel free to ask questions on our [forum](https://forum.helloid.com)_
 
 ## HelloID Docs
 The official HelloID documentation can be found at: https://docs.helloid.com/
