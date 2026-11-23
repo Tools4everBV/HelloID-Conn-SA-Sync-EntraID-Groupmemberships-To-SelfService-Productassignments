@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-SA-Sync-AD-Groupmemberships-To-HelloID-Selfservice-Productassignments
 #
-# Version: 2.1.0
+# Version: 2.2.0
 #####################################################
 
 # Set to false to acutally perform actions - Only run as DryRun when testing/troubleshooting!
@@ -32,7 +32,11 @@ $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
 # $EntraIdCertificateBase64String = "" # Set from Global Variable
 # $EntraIdCertificatePassword = "" # Set from Global Variable
 
-$entraIDGroupsSearchFilter = "`$search=`"displayName:department_`"" # Optional, when no filter is provided ($entraIDGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections
+# Optional: additional $filter expression to limit which groups are synced, combined with 'and' to the base group filter.
+# Set to $null to query all manageable groups.
+# Example: "startswith(displayName,'department_')"
+# Reference: https://learn.microsoft.com/en-us/graph/filter-query-parameter
+$entraIDGroupsSearchFilter = "startswith(displayName,'department_')" 
 
 #HelloID Self service Product Configuration
 $ProductSkuPrefix = 'ENTRAGRP' # Optional, when no SkuPrefix is provided ($ProductSkuPrefix = $null), all products will be queried
@@ -598,10 +602,13 @@ try {
 
     $m365GroupFilter = "groupTypes/any(c:c+eq+'Unified')"
     $securityGroupFilter = "NOT(groupTypes/any(c:c+eq+'DynamicMembership')) and onPremisesSyncEnabled eq null and mailEnabled eq false and securityEnabled eq true"
-    $managableGroupsFilter = "`$filter=$m365GroupFilter or $securityGroupFilter"
-  
+    $managableGroupsFilter = "($m365GroupFilter or $securityGroupFilter)"
+    if (-not [string]::IsNullOrEmpty($entraIDGroupsSearchFilter)) {
+        $managableGroupsFilter = "$managableGroupsFilter and $entraIDGroupsSearchFilter"
+    }
+
     $entraIDQuerySplatParams = @{
-        Uri         = "$($MSGraphBaseUri)/v1.0/groups?$managableGroupsFilter&$entraIDGroupsSearchFilter&$select&`$top=999&`$count=true"
+        Uri         = "$($MSGraphBaseUri)/v1.0/groups?`$filter=$managableGroupsFilter&$select&`$top=999&`$count=true"
         Headers     = $headers
         Method      = 'GET'
         ErrorAction = 'Stop'
