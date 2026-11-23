@@ -1,7 +1,7 @@
 #####################################################
-# HelloID-SA-Sync-AD-Groupmemberships-To-HelloID-Selfservice-Productassignments
+# HelloID-SA-Sync-EntraID-Groupmemberships-To-HelloID-Selfservice-Productassignments
 #
-# Version: 2.1.0
+# Version: 2.2.0
 #####################################################
 
 # Set to false to acutally perform actions - Only run as DryRun when testing/troubleshooting!
@@ -21,9 +21,9 @@ $WarningPreference = "Continue"
 
 # Make sure to create the Global variables defined below in HelloID
 # HelloID API connection (required)
-# $helloIDPortalBaseUrl = $portalBaseUrl # When running from HelloID, set from default Global Variable
-# $helloIDPortalApiKey = $portalApiKey # When running from HelloID, set from default Global Variable
-# $helloIDPortalApiSecret = $portalApiSecret # When running from HelloID, set from default Global Variable
+$helloIDPortalBaseUrl = $portalBaseUrl # When running from HelloID, set from default Global Variable
+$helloIDPortalApiKey = $portalApiKey # When running from HelloID, set from default Global Variable
+$helloIDPortalApiSecret = $portalApiSecret # When running from HelloID, set from default Global Variable
 
 #EntraID Connection Configuration
 $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
@@ -32,7 +32,11 @@ $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
 # $EntraIdCertificateBase64String = "" # Set from Global Variable
 # $EntraIdCertificatePassword = "" # Set from Global Variable
 
-$entraIDGroupsSearchFilter = "`$search=`"displayName:department_`"" # Optional, when no filter is provided ($entraIDGroupsSearchFilter = $null), all groups will be queried - Only displayName and description are supported with the search filter. Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http#using-search-on-directory-object-collections
+# Optional: additional $filter expression to limit which groups are synced, combined with 'and' to the base group filter.
+# Set to $null to query all manageable groups.
+# Example: "startswith(displayName,'department_')"
+# Reference: https://learn.microsoft.com/en-us/graph/filter-query-parameter
+$entraIDGroupsSearchFilter = "startswith(displayName,'department_')" 
 
 #HelloID Self service Product Configuration
 $ProductSkuPrefix = 'ENTRAGRP' # Optional, when no SkuPrefix is provided ($ProductSkuPrefix = $null), all products will be queried
@@ -40,9 +44,9 @@ $PowerShellActionName = "Add-EntraIDUserToEntraIDGroup" # Define the name of the
 $commentRequired = $false # Set to $true if comment is configured as required
 
 #Correlation Configuration
-# The name of the property of HelloID Self service Product action variables to match to AD Groups (name of the variable of the PowerShell action that contains the group)
+# The name of the property of HelloID Self service Product action variables to match to Entra ID Groups (name of the variable of the PowerShell action that contains the group)
 $PowerShellActionVariableCorrelationProperty = "GroupId"
-# The name of the property of AD groups to match Groups in HelloID Self service Product actions (the group)
+# The name of the property of Entra ID groups to match Groups in HelloID Self service Product actions (the group)
 $entraIDGroupCorrelationProperty = "id"
 # The name of the property of Entra ID users to match to HelloID users
 $entraIDUserCorrelationProperty = "userPrincipalName" # note when using the AD sync use "userPrincipalName" in combination with $helloIDUserCorrelationProperty = "userName"
@@ -518,9 +522,9 @@ try {
         
             Write-StatusMessage -Event Error -Message "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
         
-            throw "Error querying actions of Product [$($helloIDSelfServiceProductInScope.productId)]. Error Message: $($errorMessage.AuditErrorMessage)"
+            throw "Error querying actions of Product [$($helloIDSelfServiceProductInScope.selfServiceProductGUID)]. Error Message: $($errorMessage.AuditErrorMessage)"
         }
-        #endregion Get objects with with membership to AD group
+        #endregion Get objects with with membership to Entra ID group
     }
 
     # Filter for products with specified actions
@@ -598,10 +602,13 @@ try {
 
     $m365GroupFilter = "groupTypes/any(c:c+eq+'Unified')"
     $securityGroupFilter = "NOT(groupTypes/any(c:c+eq+'DynamicMembership')) and onPremisesSyncEnabled eq null and mailEnabled eq false and securityEnabled eq true"
-    $managableGroupsFilter = "`$filter=$m365GroupFilter or $securityGroupFilter"
-  
+    $managableGroupsFilter = "($m365GroupFilter or $securityGroupFilter)"
+    if (-not [string]::IsNullOrEmpty($entraIDGroupsSearchFilter)) {
+        $managableGroupsFilter = "$managableGroupsFilter and $entraIDGroupsSearchFilter"
+    }
+
     $entraIDQuerySplatParams = @{
-        Uri         = "$($MSGraphBaseUri)/v1.0/groups?$managableGroupsFilter&$entraIDGroupsSearchFilter&$select&`$top=999&`$count=true"
+        Uri         = "$($MSGraphBaseUri)/v1.0/groups?`$filter=$managableGroupsFilter&$select&`$top=999&`$count=true"
         Headers     = $headers
         Method      = 'GET'
         ErrorAction = 'Stop'
@@ -646,10 +653,12 @@ try {
     # Get Entra ID Groupmemberships of groups
     try {
         if ($verboseLogging -eq $true) {
-            Write-Verbose "Enhancing AD groups with members"
+            Write-Verbose "Enhancing Entra ID groups with members"
         }
         $entraIDGroupsInScope | Add-Member -MemberType NoteProperty -Name "members" -Value $null -Force
         $totalEntraIDGroupMembers = 0
+        # Groups of which the members could not be queried (skipped in the calculation, to prevent wrongly revoking productassignments)
+        $entraIDGroupsWithMembersQueryError = [System.Collections.ArrayList]@()
         foreach ($entraIDGroup in $entraIDGroupsInScope) {
             try {
                 if ($verboseLogging -eq $true) {
@@ -713,9 +722,11 @@ try {
 
                 if ($verboseLogging -eq $true) {
                     Write-Verbose "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($($errorMessage.VerboseErrorMessage))"
-        
-                    Write-Verbose "Error querying Entra ID groupmembers of group [$($entraIDGroup.id)]. Error Message: $($errorMessage.AuditErrorMessage)"
                 }
+
+                # Skip this group in the calculation, otherwise all existing productassignments of the product would be revoked
+                [void]$entraIDGroupsWithMembersQueryError.Add("$($entraIDGroup.$entraIDGroupCorrelationProperty)")
+                Write-StatusMessage -Event Error -Message "Error querying Entra ID groupmembers of group [$($entraIDGroup.displayName) ($($entraIDGroup.id))]. The group will be skipped, no productassignments will be changed for the product(s) of this group. Error Message: $($errorMessage.AuditErrorMessage)"
             }
         }
 
@@ -748,6 +759,8 @@ try {
     $newProductAssignmentObjects = [System.Collections.ArrayList]@()
     $obsoleteProductAssignmentObjects = [System.Collections.ArrayList]@()
     $existingProductAssignmentObjects = [System.Collections.ArrayList]@()
+    $skippedProducts = [System.Collections.ArrayList]@()
+    $totalProductAssignments = 0
     foreach ($product in $helloIDSelfServiceProductsInScopeWithActionsInScope) {
         if ($verboseLogging -eq $true) {
             Write-Verbose "Calculating new and obsolete product assignments for Product [$($product.name)]"
@@ -761,7 +774,14 @@ try {
             continue
         }
         elseif (($entraIDGroup | Measure-Object).Count -gt 1) {
-            Write-StatusMessage -Event Error -Message "Multiple Entra ID groups found with $entraIDGroupCorrelationProperty [$($entraIDGroupGuid)] for Product [$($product.name)]. Please correct this so the $entraIDGroupCorrelationProperty of the AD group is unique"
+            Write-StatusMessage -Event Error -Message "Multiple Entra ID groups found with $entraIDGroupCorrelationProperty [$($entraIDGroupGuid)] for Product [$($product.name)]. Please correct this so the $entraIDGroupCorrelationProperty of the Entra ID group is unique"
+            continue
+        }
+
+        # Skip groups of which the members could not be queried
+        if ("$($entraIDGroup.$entraIDGroupCorrelationProperty)" -in $entraIDGroupsWithMembersQueryError) {
+            Write-StatusMessage -Event Error -Message "Skipping Product [$($product.name)]: the members of Entra ID group [$($entraIDGroup.displayName) ($($entraIDGroup.$entraIDGroupCorrelationProperty))] could not be queried. No productassignments will be changed for this product"
+            [void]$skippedProducts.Add($product.name)
             continue
         }
 
@@ -981,13 +1001,24 @@ try {
         Write-SummaryMessage -Event Warning -Message "DryRun: Would revoke [$(($obsoleteProductassignmentObjects | Measure-Object).Count)] productassignments for [$(($obsoleteProductassignmentObjects | Sort-Object -Property productGuid -Unique | Measure-Object).Count)] HelloID Self service Products"
     }
 
+    if (($skippedProducts | Measure-Object).Count -gt 0) {
+        # Task is completed for all other products, but is reported as failed because products were skipped
+        $skippedMessage = "Skipped [$(($skippedProducts | Measure-Object).Count)] HelloID Self service Product(s) because the members of the Entra ID group could not be queried (no productassignments changed for these products): $($skippedProducts -join ', ')"
+        Write-StatusMessage -Event Error -Message $skippedMessage
+        Write-SummaryMessage -Event Failed -Message $skippedMessage
+    }
+
     if ($dryRun -eq $false) {
         Write-StatusMessage -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
-        Write-SummaryMessage -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        if (($skippedProducts | Measure-Object).Count -eq 0) {
+            Write-SummaryMessage -Event Success -Message "Successfully synchronized [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        }
     }
     else {
         Write-StatusMessage -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
-        Write-SummaryMessage -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        if (($skippedProducts | Measure-Object).Count -eq 0) {
+            Write-SummaryMessage -Event Success -Message "DryRun: Would synchronize [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
+        }
     }
 }
 catch {
