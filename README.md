@@ -1,10 +1,12 @@
 # HelloID-Conn-SA-Sync-EntraID-Groupmemberships-To-SelfService-Productassignments
 
 > [!IMPORTANT]
-> **Best Practice - Maximum Synchronization Frequency: Once per month**
+> **Best Practice - Run once. If scheduled, maximum once per month**
 >
-> **Why this maximum?**
-> This sync processes large volumes (e.g., 1,000 groups with 100 members each = 100,000 assignments) and causes significant system load. It's designed as a **one-time migration** to bring existing permissions into HelloID Service Automation as product assignments.
+> **Why?**
+> This sync processes large volumes (e.g., 1,000 groups with 100 members each = 100,000 assignments) and causes significant system load. It is designed as a **one-time migration** to bring existing permissions into HelloID Service Automation as product assignments.
+>
+> Ideally you run it once. If permissions are also still assigned manually or via Provisioning, a scheduled run is acceptable, but no more than **once per month**.
 >
 > If a higher frequency is required for your organization, please contact **Tools4ever Support**. This helps us understand your use case and provide proper guidance.
 
