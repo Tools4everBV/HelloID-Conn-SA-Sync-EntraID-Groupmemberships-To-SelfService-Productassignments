@@ -21,9 +21,9 @@ $WarningPreference = "Continue"
 
 # Make sure to create the Global variables defined below in HelloID
 # HelloID API connection (required)
-# $helloIDPortalBaseUrl = $portalBaseUrl # When running from HelloID, set from default Global Variable
-# $helloIDPortalApiKey = $portalApiKey # When running from HelloID, set from default Global Variable
-# $helloIDPortalApiSecret = $portalApiSecret # When running from HelloID, set from default Global Variable
+$helloIDPortalBaseUrl = $portalBaseUrl # When running from HelloID, set from default Global Variable
+$helloIDPortalApiKey = $portalApiKey # When running from HelloID, set from default Global Variable
+$helloIDPortalApiSecret = $portalApiSecret # When running from HelloID, set from default Global Variable
 
 #EntraID Connection Configuration
 $MSGraphBaseUri = "https://graph.microsoft.com/" # Fixed value
