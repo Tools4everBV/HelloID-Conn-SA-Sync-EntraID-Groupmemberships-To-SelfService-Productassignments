@@ -1027,7 +1027,5 @@ catch {
     Write-StatusMessage -Event Error -Message "Exception message: $($_.Exception.Message)"
     Write-StatusMessage -Event Error -Message "Exception details: $($_.errordetails)"
     Write-SummaryMessage -Event Failed -Message "Error synchronization of [$($totalEntraIDGroupMembers)] Entra ID groupmemberships to [$totalProductAssignments] HelloID Self service Productassignments for [$(($helloIDSelfServiceProductsInScope | Measure-Object).Count)] HelloID Self service Products"
-
-    throw $_
 }
 #endregion

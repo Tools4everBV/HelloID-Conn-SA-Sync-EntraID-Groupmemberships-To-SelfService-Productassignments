@@ -14,7 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - When the members of an Entra ID group could not be queried (for example due to throttling), the group was treated as empty and all existing productassignments of its product were revoked. Such groups are now skipped, no productassignments are changed for their products, and the task is reported as failed in the summary while all other products are still processed.
 - Product ID missing in the error message when querying product actions fails.
-- Errors in the final synchronization step are no longer swallowed, the task now ends with an error.
 - Corrected remaining references to AD in names and messages (Entra ID).
 
 ## [2.1.0] - 2026-05-28
