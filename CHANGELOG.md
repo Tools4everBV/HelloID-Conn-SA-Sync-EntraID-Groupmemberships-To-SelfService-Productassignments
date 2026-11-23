@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.0] - 2026-11-23
 
 ### Changed
+- HelloID API connection variables (`$helloIDPortalBaseUrl`, `$helloIDPortalApiKey`, `$helloIDPortalApiSecret`) are now set by default from the HelloID default global variables (`$portalBaseUrl`, `$portalApiKey`, `$portalApiSecret`).
 - Aligned the Entra ID groups query with the `HelloID-SA-Sync-EntraID-Groups-To-Products` sync script, so both scripts behave the same.
 - `$entraIDGroupsSearchFilter` is now a `$filter` expression (for example `startswith(displayName,'department_')`) instead of a `$search` expression. It is combined with `and` to the base group filter, and the base group filters are now wrapped in parentheses. Existing `$search=...` values must be converted to a `$filter` expression.
 
